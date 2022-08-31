@@ -1,5 +1,5 @@
-curl -i \
-  --header "Content-Type: application/json" \
-  --request POST \
-  --data '[[5.1, 3.5, 1.4, 0.2]]' \
-  http://localhost:5000/predict
+curl \
+  -X POST \
+  -H "content-type: application/json" \
+  --data "[[5.9, 3, 5.1, 1.8]]" \
+  http://127.0.0.1:3000/classify
