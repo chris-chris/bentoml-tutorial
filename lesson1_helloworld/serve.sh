@@ -1,0 +1,1 @@
+bentoml serve iris_classifier:latest --production
