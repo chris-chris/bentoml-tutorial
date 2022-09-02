@@ -1,1 +1,1 @@
-bentoml serve FashionMnistTensorflow:latest
+bentoml serve service:svc --reload
