@@ -1,74 +1,67 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-import io
-
-# TensorFlow
+# pylint: disable=no-name-in-module,redefined-outer-name,abstract-method
 import tensorflow as tf
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import Flatten
 
-# Helper libraries
-import numpy as np
-import matplotlib.pyplot as plt
-print(tf.__version__)
+import bentoml
 
-fashion_mnist = tf.keras.datasets.fashion_mnist
-(_train_images, train_labels), (_test_images, test_labels) = fashion_mnist.load_data()
-class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
-               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
-train_images = _train_images / 255.0
-test_images = _test_images / 255.0
+print("TensorFlow version:", tf.__version__)
 
-class FashionMnist(tf.keras.Model):
+
+class MyModel(Model):
     def __init__(self):
-        super(FashionMnist, self).__init__()
-        self.cnn = tf.keras.Sequential([
-            tf.keras.layers.Flatten(input_shape=(28, 28)),
-            tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dense(10, activation='softmax')
-        ])
-    
-    @staticmethod
-    def image_bytes2tensor(inputs):
-        with tf.device("cpu:0"):  # map_fn has issues on GPU https://github.com/tensorflow/tensorflow/issues/28007
-            inputs = tf.map_fn(lambda i: tf.io.decode_png(i, channels=1), inputs, dtype=tf.uint8)
-        inputs = tf.cast(inputs, tf.float32)
-        inputs = (255.0 - inputs) / 255.0
-        inputs = tf.reshape(inputs, [-1, 28, 28])
-        return inputs
+        super(MyModel, self).__init__()
+        self.conv1 = Conv2D(32, 3, activation="relu")
+        self.flatten = Flatten()
+        self.d1 = Dense(128, activation="relu")
+        self.d2 = Dense(10)
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=(None,), dtype=tf.string)])
-    def predict_image(self, inputs):
-        inputs = self.image_bytes2tensor(inputs)
-        return self(inputs)
-    
-    def call(self, inputs):
-        return self.cnn(inputs)
+    @tf.function(input_signature=[tf.TensorSpec([None, 28, 28, 1], tf.float32)])
+    def call(self, x):
+        x = self.conv1(x)
+        x = self.flatten(x)
+        x = self.d1(x)
+        return self.d2(x)
 
-# pick up a test image
-d_test_img = _test_images[0]
-print(class_names[test_labels[0]])
 
-plt.imshow(255.0 - d_test_img, cmap='gray')
-plt.imsave("test.png", 255.0 - d_test_img, cmap='gray')
+if __name__ == "__main__":
+    mnist = tf.keras.datasets.mnist
 
-# read bytes
-with open("test.png", "rb") as f:
-    img_bytes = f.read()
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-# verify saved image
-assert tf.reduce_mean(FashionMnist.image_bytes2tensor(tf.constant([img_bytes])) - d_test_img) < 0.01
+    x_train = x_train.reshape(60000, 28, 28, 1).astype("float32") / 255
+    x_test = x_test.reshape(10000, 28, 28, 1).astype("float32") / 255
 
-model = FashionMnist()
-model.compile(optimizer='adam',
-              loss='sparse_categorical_crossentropy',
-              metrics=['accuracy'])
-model.fit(train_images, train_labels, epochs=50)
+    # Reserve 10,000 samples for validation
+    x_val = x_train[-10000:]
+    y_val = y_train[-10000:]
+    x_train = x_train[:-10000]
+    y_train = y_train[:-10000]
 
-predict = model.predict_image(tf.constant([img_bytes]))
-klass = tf.argmax(predict, axis=1)
-[class_names[c] for c in klass]
+    # Create an instance of the model
+    model = MyModel()
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(),  # Optimizer
+        # Loss function to minimize
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        # List of metrics to monitor
+        metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+    )
+    history = model.fit(
+        x_train,
+        y_train,
+        batch_size=64,
+        epochs=2,
+        # We pass some validation for
+        # monitoring validation loss and metrics
+        # at the end of each epoch
+        validation_data=(x_val, y_val),
+    )
 
-from tensorflow_fashion_mnist import FashionMnistTensorflow
-
-bento_svc = FashionMnistTensorflow()
-bento_svc.pack("model", model)
-saved_path = bento_svc.save()
+    bentoml.tensorflow.save_model(
+        "tensorflow_mnist",
+        model,
+        signatures={"__call__": {"batchable": True, "batch_dim": 0}},
+    )

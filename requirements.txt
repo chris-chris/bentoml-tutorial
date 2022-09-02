@@ -1,3 +1,6 @@
 bentoml
 scikit-learn
 pandas
+torch
+torchvision
+backports.lzma

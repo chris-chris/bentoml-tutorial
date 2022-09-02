@@ -1,0 +1,6 @@
+runners:
+  iris_clf:
+    batching:
+      enabled: true
+      max_batch_size: 100
+      max_latency_ms: 500
